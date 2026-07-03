@@ -132,10 +132,10 @@ type httpsServer struct {
 	server3 *http3.Server
 
 	// mu protects cert, enabled, and shutdown.
-	mu sync.Mutex
+	mu *sync.Mutex
 
-	// reconfigured wakes the TLS server loop waiting in
-	// [webAPI.waitForTLSReady] whenever cert, enabled, or shutdown changes.
+	// reconfigured wakes the TLS server loop waiting in [waitForTLSReady]
+	// whenever cert, enabled, or shutdown changes.
 	reconfigured chan unit
 
 	// cert is the certificate used by server and server3.
@@ -148,7 +148,7 @@ type httpsServer struct {
 	enabled bool
 }
 
-// notifyReconfigured notifies the loop waiting in [webAPI.waitForTLSReady].
+// notifyReconfigured notifies the loop waiting in [waitForTLSReady].
 func (srv *httpsServer) notifyReconfigured() {
 	select {
 	case srv.reconfigured <- unit{}:
@@ -164,12 +164,38 @@ func (srv *httpsServer) inShutdown() (ok bool) {
 	return srv.shutdown
 }
 
-// certificate returns a cert used by the server.
+// certificate returns a cert used by the server.  cert must not be modified.
 func (srv *httpsServer) certificate() (cert tls.Certificate) {
 	srv.mu.Lock()
 	defer srv.mu.Unlock()
 
 	return srv.cert
+}
+
+// waitForTLSReady blocks until the server is enabled or a shutdown signal is
+// received.  Returns true when server is ready.  Must be run with one goroutine
+// only.
+func (srv *httpsServer) waitForTLSReady() (ok bool) {
+	for {
+		srv.mu.Lock()
+
+		switch {
+		case srv.shutdown:
+			srv.mu.Unlock()
+
+			return false
+		case srv.enabled:
+			srv.mu.Unlock()
+
+			return true
+		default:
+			srv.mu.Unlock()
+		}
+
+		// Wait until necessary data is supplied or a shutdown is requested,
+		// then re-check the state above.
+		<-srv.reconfigured
+	}
 }
 
 // webAPI is the web UI and API server.
@@ -204,6 +230,8 @@ type webAPI struct {
 
 	// httpsServer is the server that handles HTTPS traffic.  If it is not nil,
 	// [Web.http3Server] must also not be nil.
+	//
+	// TODO(d.kolyshev):  Make it a pointer.
 	httpsServer httpsServer
 
 	// startTime is the start time of the web API server in Unix milliseconds.
@@ -249,6 +277,7 @@ func newWebAPI(ctx context.Context, conf *webAPIConfig) (w *webAPI) {
 		w.registerControlHandlers()
 	}
 
+	w.httpsServer.mu = &sync.Mutex{}
 	w.httpsServer.reconfigured = make(chan unit, 1)
 
 	return w
@@ -274,7 +303,7 @@ func (web *webAPI) tlsConfigChanged(ctx context.Context, tlsConf *tlsConfigSetti
 		}
 	}
 
-	web.httpsServer.mu.Lock()
+	// TODO(d.kolyshev):  Consider protecting server with mu.
 	if web.httpsServer.server != nil {
 		var cancel context.CancelFunc
 		ctx, cancel = context.WithTimeout(ctx, shutdownTimeout)
@@ -284,9 +313,13 @@ func (web *webAPI) tlsConfigChanged(ctx context.Context, tlsConf *tlsConfigSetti
 		cancel()
 	}
 
-	web.httpsServer.enabled = enabled
-	web.httpsServer.cert = cert
-	web.httpsServer.mu.Unlock()
+	func() {
+		web.httpsServer.mu.Lock()
+		defer web.httpsServer.mu.Unlock()
+
+		web.httpsServer.enabled = enabled
+		web.httpsServer.cert = cert
+	}()
 
 	web.httpsServer.notifyReconfigured()
 }
@@ -361,9 +394,12 @@ func (web *webAPI) start(ctx context.Context) {
 func (web *webAPI) close(ctx context.Context) {
 	web.logger.InfoContext(ctx, "stopping http server")
 
-	web.httpsServer.mu.Lock()
-	web.httpsServer.shutdown = true
-	web.httpsServer.mu.Unlock()
+	func() {
+		web.httpsServer.mu.Lock()
+		defer web.httpsServer.mu.Unlock()
+
+		web.httpsServer.shutdown = true
+	}()
 
 	web.httpsServer.notifyReconfigured()
 
@@ -397,7 +433,7 @@ func (web *webAPI) tlsServerLoop(ctx context.Context) {
 // serveTLS initializes and starts the HTTPS server.  Returns true when next
 // retry is necessary.
 func (web *webAPI) serveTLS(ctx context.Context) (next bool) {
-	if !web.waitForTLSReady() {
+	if !web.httpsServer.waitForTLSReady() {
 		return false
 	}
 
@@ -445,31 +481,6 @@ func (web *webAPI) serveTLS(ctx context.Context) (next bool) {
 	}
 
 	return true
-}
-
-// waitForTLSReady blocks until the HTTPS server is enabled or a shutdown signal
-// is received.  Returns true when server is ready.
-func (web *webAPI) waitForTLSReady() (ok bool) {
-	for {
-		web.httpsServer.mu.Lock()
-
-		switch {
-		case web.httpsServer.shutdown:
-			web.httpsServer.mu.Unlock()
-
-			return false
-		case web.httpsServer.enabled:
-			web.httpsServer.mu.Unlock()
-
-			return true
-		default:
-			web.httpsServer.mu.Unlock()
-		}
-
-		// Wait until necessary data is supplied or a shutdown is requested,
-		// then re-check the state above.
-		<-web.httpsServer.reconfigured
-	}
 }
 
 // mustStartHTTP3 initializes and starts HTTP3 server.
