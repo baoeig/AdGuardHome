@@ -86,7 +86,8 @@ func TestServer_ProcessInitial(t *testing.T) {
 				ServePlainDNS: true,
 			}
 
-			s := createTestServer(t,
+			s := createTestServer(
+				t,
 				&filtering.Config{BlockingMode: filtering.BlockingModeDefault},
 				c,
 				testTLSConfigProvider,
@@ -189,7 +190,8 @@ func TestServer_ProcessFilteringAfterResponse(t *testing.T) {
 				ServePlainDNS: true,
 			}
 
-			s := createTestServer(t,
+			s := createTestServer(
+				t,
 				&filtering.Config{BlockingMode: filtering.BlockingModeDefault},
 				c,
 				testTLSConfigProvider,

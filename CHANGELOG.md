@@ -20,9 +20,9 @@ NOTE: Add new changes BELOW THIS COMMENT.
 
 ### Security
 
-- Go version has been updated to prevent the possibility of exploiting the Go vulnerabilities fixed in [1.26.4][go-1.26.4].
-
 - The H2C connection establishment via HTTP/1.1 request upgrade is no longer supported.  See [RFC 9113][rfc9113].
+
+- Go version has been updated to prevent the possibility of exploiting the Go vulnerabilities fixed in [1.26.4][go-1.26.4].
 
 - The size of rulelists is limited.  This is necessary to prevent a user's machine from becoming overloaded if the filter source misbehaves.
 
@@ -42,10 +42,13 @@ NOTE: Add new changes BELOW THIS COMMENT.
 
 ### Fixed
 
+- Invalid AA flag in DNS responses ([#7955]).
+
 - The parsing of the `ech` parameter in DNS rewrite rules for the HTTPS record type ([#8276]).
 
 - Blocked services check on the Custom filtering rules page does not work properly without specifying of a client.
 
+[#7955]:     https://github.com/AdguardTeam/AdGuardHome/issues/7955
 [#8276]:     https://github.com/AdguardTeam/AdGuardHome/issues/8276
 [go-1.26.4]: https://groups.google.com/g/golang-announce/c/tKs3rmcBcKw
 [rfc9113]:   https://datatracker.ietf.org/doc/html/rfc9113

@@ -192,7 +192,11 @@ func newWebAPI(ctx context.Context, conf *webAPIConfig) (w *webAPI) {
 
 	mux := conf.mux
 	// if not configured, redirect / to /install.html, otherwise redirect /install.html to /
-	mux.Handle("/", withMiddlewares(clientFS, gziphandler.GzipHandler, w.postInstallHandler))
+	mux.Handle("/", httputil.Wrap(
+		clientFS,
+		httputil.MiddlewareFunc(w.postInstallHandler),
+		httputil.MiddlewareFunc(gziphandler.GzipHandler),
+	))
 
 	// add handlers for /install paths, we only need them when we're not configured yet
 	if conf.firstRun {
@@ -266,15 +270,8 @@ func (web *webAPI) start(ctx context.Context) {
 		printHTTPAddresses(ctx, web.logger, urlutil.SchemeHTTP, web.tlsManager)
 		errs := make(chan error, 2)
 
-		hdlr := withMiddlewares(web.conf.mux, limitRequestBody)
-
 		logger := web.baseLogger.With(loggerKeyServer, "plain")
-
-		// TODO(a.garipov):  Remove other logs like this in other code.
-		logMw := httputil.NewLogMiddleware(logger, slog.LevelDebug)
-		hdlr = logMw.Wrap(hdlr)
-
-		hdlr = web.auth.middleware().Wrap(hdlr)
+		hdlr := web.wrapMux(logger)
 
 		// Enable unencrypted HTTP/2, e.g. for proxies.
 		protocols := &http.Protocols{}
@@ -285,11 +282,11 @@ func (web *webAPI) start(ctx context.Context) {
 		web.httpServer = &http.Server{
 			Addr:              web.conf.BindAddr.String(),
 			Handler:           hdlr,
-			Protocols:         protocols,
 			ReadTimeout:       web.conf.ReadTimeout,
 			ReadHeaderTimeout: web.conf.ReadHeaderTimeout,
 			WriteTimeout:      web.conf.WriteTimeout,
 			ErrorLog:          slog.NewLogLogger(logger.Handler(), slog.LevelError),
+			Protocols:         protocols,
 		}
 		go func() {
 			defer slogutil.RecoverAndLog(ctx, logger)
@@ -308,6 +305,17 @@ func (web *webAPI) start(ctx context.Context) {
 		// We use ErrServerClosed as a sign that we need to rebind on a new
 		// address, so go back to the start of the loop.
 	}
+}
+
+// wrapMux wraps mux with common middlewares.  l must not be nil.
+func (web *webAPI) wrapMux(l *slog.Logger) (h http.Handler) {
+	h = httputil.Wrap(web.conf.mux, httputil.MiddlewareFunc(limitRequestBody))
+
+	// TODO(a.garipov):  Remove other logs like this in other code.
+	logMw := httputil.NewLogMiddleware(l, slog.LevelDebug)
+	h = logMw.Wrap(h)
+
+	return web.auth.middleware().Wrap(h)
 }
 
 // close gracefully shuts down the HTTP servers.
@@ -363,13 +371,11 @@ func (web *webAPI) serveTLS(ctx context.Context) (next bool) {
 	addr := netip.AddrPortFrom(web.conf.BindAddr.Addr(), portHTTPS).String()
 	logger := web.baseLogger.With(loggerKeyServer, "https")
 
-	// TODO(a.garipov):  Remove other logs like this in other code.
-	logMw := httputil.NewLogMiddleware(logger, slog.LevelDebug)
-	hdlr := logMw.Wrap(withMiddlewares(web.conf.mux, limitRequestBody))
+	hdlr := web.wrapMux(logger)
 
 	web.httpsServer.server = &http.Server{
 		Addr:    addr,
-		Handler: web.auth.middleware().Wrap(hdlr),
+		Handler: hdlr,
 		// TODO(m.kazantsev):  Do not create TLS config manually, but use
 		// [aghtls.TLSConfigProvider].
 		TLSConfig: &tls.Config{
@@ -425,6 +431,9 @@ func (web *webAPI) waitForTLSReady() (ok bool) {
 func (web *webAPI) mustStartHTTP3(ctx context.Context, address string) {
 	defer slogutil.RecoverAndExit(ctx, web.logger, osutil.ExitCodeFailure)
 
+	logger := web.baseLogger.With(loggerKeyServer, "http3")
+	hdlr := web.wrapMux(logger)
+
 	web.httpsServer.server3 = &http3.Server{
 		// TODO(a.garipov): See if there is a way to use the error log as
 		// well as timeouts here.
@@ -437,7 +446,7 @@ func (web *webAPI) mustStartHTTP3(ctx context.Context, address string) {
 			CipherSuites: web.tlsManager.customCipherIDs,
 			MinVersion:   tls.VersionTLS12,
 		},
-		Handler: web.auth.middleware().Wrap(withMiddlewares(web.conf.mux, limitRequestBody)),
+		Handler: hdlr,
 	}
 
 	web.logger.DebugContext(ctx, "starting http/3 server")

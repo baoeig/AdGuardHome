@@ -387,21 +387,22 @@ func TestServer_HandleTestUpstreamDNS(t *testing.T) {
 	)
 	require.NoError(t, err)
 
-	srv := createTestServer(t, &filtering.Config{
-		BlockingMode: filtering.BlockingModeDefault,
-		EtcHosts:     hc,
-	}, ServerConfig{
-		UDPListenAddrs:  []*net.UDPAddr{{}},
-		TCPListenAddrs:  []*net.TCPAddr{{}},
-		UpstreamTimeout: upsTimeout,
-		TLSConf:         &TLSConfig{},
-		Config: Config{
-			UpstreamMode:     UpstreamModeLoadBalance,
-			EDNSClientSubnet: &EDNSClientSubnet{Enabled: false},
-			ClientsContainer: EmptyClientsContainer{},
+	srv := createTestServer(
+		t, &filtering.Config{
+			BlockingMode: filtering.BlockingModeDefault,
+			EtcHosts:     hc,
+		}, ServerConfig{
+			UDPListenAddrs:  []*net.UDPAddr{{}},
+			TCPListenAddrs:  []*net.TCPAddr{{}},
+			UpstreamTimeout: upsTimeout,
+			TLSConf:         &TLSConfig{},
+			Config: Config{
+				UpstreamMode:     UpstreamModeLoadBalance,
+				EDNSClientSubnet: &EDNSClientSubnet{Enabled: false},
+				ClientsContainer: EmptyClientsContainer{},
+			},
+			ServePlainDNS: true,
 		},
-		ServePlainDNS: true,
-	},
 		testTLSConfigProvider,
 	)
 	srv.etcHosts = upstream.NewHostsResolver(hc)
