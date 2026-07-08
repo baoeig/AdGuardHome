@@ -291,9 +291,11 @@ func TestServer_ServeDNS_dns64(t *testing.T) {
 			// method when setting an OOB size.  As a temporary workaround,
 			// recreate the whole server for each test case.
 			s := createTestServer(
-				t, &filtering.Config{
+				t,
+				&filtering.Config{
 					BlockingMode: filtering.BlockingModeDefault,
-				}, ServerConfig{
+				},
+				ServerConfig{
 					UDPListenAddrs: []*net.UDPAddr{{}},
 					TCPListenAddrs: []*net.TCPAddr{{}},
 					UseDNS64:       true,
