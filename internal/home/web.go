@@ -173,6 +173,9 @@ func (srv *httpsServer) certificate() (cert tls.Certificate) {
 // only.
 func (srv *httpsServer) waitForTLSReady() (ok bool) {
 	for {
+		// Wait until necessary data is supplied or a shutdown is requested.
+		<-srv.reconfigured
+
 		srv.mu.Lock()
 
 		switch {
@@ -187,10 +190,6 @@ func (srv *httpsServer) waitForTLSReady() (ok bool) {
 		default:
 			srv.mu.Unlock()
 		}
-
-		// Wait until necessary data is supplied or a shutdown is requested,
-		// then re-check the state above.
-		<-srv.reconfigured
 	}
 }
 
