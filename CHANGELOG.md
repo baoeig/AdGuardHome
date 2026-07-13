@@ -42,7 +42,7 @@ NOTE: Add new changes BELOW THIS COMMENT.
 
 ### Fixed
 
-- Blocked requests do not contain an EDNS(0) OPT record ([#8183]).
+- Blocked requests without an EDNS(0) OPT record ([#8183]).
 
 - Invalid AA flag in DNS responses ([#7955]).
 

@@ -17,6 +17,8 @@ import (
 // template.  Also extract all the methods to a separate entity.
 
 // reply creates a DNS response for req.
+//
+// NOTE: If req uses EDNS(0), the response copies its UDP size and DO flag.
 func (*Server) reply(req *dns.Msg, code int) (resp *dns.Msg) {
 	resp = (&dns.Msg{}).SetRcode(req, code)
 	resp.RecursionAvailable = true
@@ -409,8 +411,9 @@ func (s *Server) NewMsgSERVFAIL(req *dns.Msg) (resp *dns.Msg) {
 // NewMsgNOTIMPLEMENTED implements the [proxy.MessageConstructor] interface for
 // *Server.
 func (s *Server) NewMsgNOTIMPLEMENTED(req *dns.Msg) (resp *dns.Msg) {
-	// NOTE: [Server.reply] must not be used there, because it appends an EDNS0
-	// OPT record to the reply.
+	// NOTE: [Server.reply] must not be used there, because it unconditionally
+	// copies UDP size and DO bit from the request, when in this case we want to
+	// use constant values.
 	resp = (&dns.Msg{}).SetRcode(req, dns.RcodeNotImplemented)
 	resp.RecursionAvailable = true
 
@@ -423,7 +426,10 @@ func (s *Server) NewMsgNOTIMPLEMENTED(req *dns.Msg) (resp *dns.Msg) {
 
 	// NOTIMPLEMENTED without EDNS is treated as 'we don't support EDNS', so
 	// explicitly set it.
-	resp.SetEdns0(maxUDPPayload, false)
+	opt := req.IsEdns0()
+	if opt != nil {
+		resp.SetEdns0(maxUDPPayload, false)
+	}
 
 	return resp
 }
