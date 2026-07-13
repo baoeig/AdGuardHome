@@ -21,6 +21,7 @@ const dnsConfig = handleActions(
                 blocking_ipv4,
                 blocking_ipv6,
                 upstream_dns,
+                gfwlist_upstream_dns,
                 upstream_mode,
                 fallback_dns,
                 bootstrap_dns,
@@ -35,6 +36,7 @@ const dnsConfig = handleActions(
                 blocking_ipv4: blocking_ipv4 || DEFAULT_BLOCKING_IPV4,
                 blocking_ipv6: blocking_ipv6 || DEFAULT_BLOCKING_IPV6,
                 upstream_dns: (upstream_dns && upstream_dns.join('\n')) || '',
+                gfwlist_upstream_dns: (gfwlist_upstream_dns && gfwlist_upstream_dns.join('\n')) || '',
                 fallback_dns: (fallback_dns && fallback_dns.join('\n')) || '',
                 bootstrap_dns: (bootstrap_dns && bootstrap_dns.join('\n')) || '',
                 local_ptr_upstreams: (local_ptr_upstreams && local_ptr_upstreams.join('\n')) || '',
@@ -71,6 +73,10 @@ const dnsConfig = handleActions(
         disable_ipv6: false,
         dnssec_enabled: false,
         upstream_dns_file: '',
+        gfwlist_enabled: false,
+        gfwlist_url: 'https://fastly.jsdelivr.net/gh/gfwlist/gfwlist/gfwlist.txt',
+        gfwlist_upstream_dns: '',
+        gfwlist_refresh_interval: 24,
     },
 );
 

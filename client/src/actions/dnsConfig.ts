@@ -63,6 +63,10 @@ export const setDnsConfig = (config: any) => async (dispatch: any) => {
             data.upstream_dns = splitByNewLine(config.upstream_dns);
             hasDnsSettings = true;
         }
+        if (Object.prototype.hasOwnProperty.call(data, 'gfwlist_upstream_dns')) {
+            data.gfwlist_upstream_dns = splitByNewLine(config.gfwlist_upstream_dns);
+            hasDnsSettings = true;
+        }
         if (Object.prototype.hasOwnProperty.call(data, 'ratelimit_whitelist')) {
             data.ratelimit_whitelist = splitByNewLine(config.ratelimit_whitelist);
             hasDnsSettings = true;

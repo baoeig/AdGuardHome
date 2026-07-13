@@ -317,6 +317,10 @@ export type DnsConfigData = {
     dnssec_enabled: boolean;
     upstream_dns_file: string;
     upstream_dns: string;
+    gfwlist_enabled: boolean;
+    gfwlist_url: string;
+    gfwlist_upstream_dns: string;
+    gfwlist_refresh_interval: number;
     fallback_dns: string;
     bootstrap_dns: string;
     local_ptr_upstreams: string;
@@ -506,6 +510,10 @@ export const initialState: RootState = {
         dnssec_enabled: false,
         upstream_dns_file: '',
         upstream_dns: '',
+        gfwlist_enabled: false,
+        gfwlist_url: 'https://fastly.jsdelivr.net/gh/gfwlist/gfwlist/gfwlist.txt',
+        gfwlist_upstream_dns: '',
+        gfwlist_refresh_interval: 24,
         fallback_dns: '',
         bootstrap_dns: '',
         local_ptr_upstreams: '',

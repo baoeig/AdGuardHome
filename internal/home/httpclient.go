@@ -75,6 +75,25 @@ func httpClient(tlsMgr *tlsManager) (c *http.Client) {
 	}
 }
 
+// externalHTTPClient returns an HTTP client that uses the operating system's
+// resolver.  It is suitable for requests made while the DNS server is being
+// initialized.  tlsMgr must not be nil.
+func externalHTTPClient(tlsMgr *tlsManager) (c *http.Client) {
+	tr := newCustomUserAgentTransport(&http.Transport{
+		Proxy: httpProxy,
+		TLSClientConfig: &tls.Config{
+			RootCAs:      tlsMgr.rootCerts,
+			CipherSuites: tlsMgr.customCipherIDs,
+			MinVersion:   tls.VersionTLS12,
+		},
+	}, aghhttp.UserAgent())
+
+	return &http.Client{
+		Timeout:   writeTimeout,
+		Transport: tr,
+	}
+}
+
 // httpProxy returns parses and returns an HTTP proxy URL from the config, if
 // any.
 func httpProxy(_ *http.Request) (u *url.URL, err error) {

@@ -36,6 +36,18 @@ type jsonDNSConfig struct {
 	// UpstreamsFile is the file containing upstream DNS servers.
 	UpstreamsFile *string `json:"upstream_dns_file"`
 
+	// GFWListEnabled controls GFWList-based upstream routing.
+	GFWListEnabled *bool `json:"gfwlist_enabled"`
+
+	// GFWListURL is the address of the Base64-encoded GFWList.
+	GFWListURL *string `json:"gfwlist_url"`
+
+	// GFWListUpstreams is the list of upstreams for GFWList domains.
+	GFWListUpstreams *[]string `json:"gfwlist_upstream_dns"`
+
+	// GFWListRefreshInterval is the GFWList refresh interval in hours.
+	GFWListRefreshInterval *uint32 `json:"gfwlist_refresh_interval"`
+
 	// Bootstraps is the list of DNS servers resolving IP addresses of the
 	// upstream DoH/DoT resolvers.
 	Bootstraps *[]string `json:"bootstrap_dns"`
@@ -150,6 +162,10 @@ func (s *Server) getDNSConfig(ctx context.Context) (c *jsonDNSConfig) {
 
 	upstreams := stringutil.CloneSliceOrEmpty(s.conf.UpstreamDNS)
 	upstreamFile := s.conf.UpstreamDNSFileName
+	gfwListEnabled := s.conf.GFWList.Enabled
+	gfwListURL := s.conf.GFWList.URL
+	gfwListUpstreams := stringutil.CloneSliceOrEmpty(s.conf.GFWList.UpstreamDNS)
+	gfwListRefreshInterval := s.conf.GFWList.RefreshIntervalHours
 	bootstraps := stringutil.CloneSliceOrEmpty(s.conf.BootstrapDNS)
 	fallbacks := stringutil.CloneSliceOrEmpty(s.conf.FallbackDNS)
 	blockingMode, blockingIPv4, blockingIPv6 := s.dnsFilter.BlockingMode()
@@ -195,6 +211,10 @@ func (s *Server) getDNSConfig(ctx context.Context) (c *jsonDNSConfig) {
 	return &jsonDNSConfig{
 		Upstreams:                &upstreams,
 		UpstreamsFile:            &upstreamFile,
+		GFWListEnabled:           &gfwListEnabled,
+		GFWListURL:               &gfwListURL,
+		GFWListUpstreams:         &gfwListUpstreams,
+		GFWListRefreshInterval:   &gfwListRefreshInterval,
 		Bootstraps:               &bootstraps,
 		Fallbacks:                &fallbacks,
 		ProtectionEnabled:        &protectionEnabled,
@@ -572,6 +592,13 @@ func (s *Server) handleSetConfig(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	err = s.validateGFWList(ctx, req)
+	if err != nil {
+		aghhttp.ErrorAndLog(ctx, l, r, w, http.StatusBadRequest, "validating gfwlist: %s", err)
+
+		return
+	}
+
 	restart := s.setConfig(req)
 	s.conf.ConfModifier.Apply(ctx)
 
@@ -652,6 +679,10 @@ func setIfNotNil[T any](currentPtr, newPtr *T) (hasSet bool) {
 func (s *Server) setConfigRestartable(dc *jsonDNSConfig) (shouldRestart bool) {
 	for _, hasSet := range []bool{
 		setIfNotNil(&s.conf.UpstreamDNS, dc.Upstreams),
+		setIfNotNil(&s.conf.GFWList.Enabled, dc.GFWListEnabled),
+		setIfNotNil(&s.conf.GFWList.URL, dc.GFWListURL),
+		setIfNotNil(&s.conf.GFWList.UpstreamDNS, dc.GFWListUpstreams),
+		setIfNotNil(&s.conf.GFWList.RefreshIntervalHours, dc.GFWListRefreshInterval),
 		setIfNotNil(&s.conf.LocalPTRResolvers, dc.LocalPTRUpstreams),
 		setIfNotNil(&s.conf.UpstreamDNSFileName, dc.UpstreamsFile),
 		setIfNotNil(&s.conf.BootstrapDNS, dc.Bootstraps),
@@ -689,6 +720,28 @@ func (s *Server) setConfigRestartable(dc *jsonDNSConfig) (shouldRestart bool) {
 	}
 
 	return shouldRestart
+}
+
+func (s *Server) validateGFWList(ctx context.Context, req *jsonDNSConfig) (err error) {
+	conf := s.conf
+	setIfNotNil(&conf.GFWList.Enabled, req.GFWListEnabled)
+	setIfNotNil(&conf.GFWList.URL, req.GFWListURL)
+	setIfNotNil(&conf.GFWList.UpstreamDNS, req.GFWListUpstreams)
+	setIfNotNil(&conf.GFWList.RefreshIntervalHours, req.GFWListRefreshInterval)
+
+	specs, err := conf.loadGFWListUpstreams(ctx, s.logger)
+	if err != nil || len(specs) == 0 {
+		return err
+	}
+
+	uc, err := proxy.ParseUpstreamsConfig(specs, &upstream.Options{
+		Logger: slogutil.NewDiscardLogger(),
+	})
+	if uc != nil {
+		err = errors.WithDeferred(err, uc.Close())
+	}
+
+	return err
 }
 
 // upstreamJSON is a request body for handleTestUpstreamDNS endpoint.

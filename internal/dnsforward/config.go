@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net"
+	"net/http"
 	"net/netip"
 	"os"
 	"slices"
@@ -69,6 +70,9 @@ type Config struct {
 	// UpstreamDNSFileName, if set, points to the file which contains upstream
 	// DNS servers.
 	UpstreamDNSFileName string `yaml:"upstream_dns_file"`
+
+	// GFWList configures domain-based upstream routing using a GFWList source.
+	GFWList GFWListConfig `yaml:"gfwlist"`
 
 	// BootstrapDNS is the list of bootstrap DNS servers for DoH and DoT
 	// resolvers (plain DNS only).
@@ -311,6 +315,12 @@ type ServerConfig struct {
 	// PendingRequestsEnabled defines if duplicate requests should be forwarded
 	// to upstreams along with the original one.
 	PendingRequestsEnabled bool
+
+	// GFWListHTTPClient downloads the configured GFWList.  It must not be nil.
+	GFWListHTTPClient *http.Client
+
+	// GFWListCachePath is the path to the parsed GFWList domain cache.
+	GFWListCachePath string
 }
 
 // UpstreamMode is a enumeration of upstream mode representations.  See
@@ -484,6 +494,13 @@ func (s *Server) initDefaultSettings() {
 
 	if len(s.conf.BootstrapDNS) == 0 {
 		s.conf.BootstrapDNS = defaultBootstrap
+	}
+
+	if s.conf.GFWList.URL == "" {
+		s.conf.GFWList.URL = defaultGFWListURL
+	}
+	if s.conf.GFWList.RefreshIntervalHours == 0 {
+		s.conf.GFWList.RefreshIntervalHours = defaultGFWListRefreshInterval
 	}
 
 	if s.conf.UDPListenAddrs == nil {

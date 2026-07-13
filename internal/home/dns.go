@@ -298,6 +298,8 @@ func newServerConfig(
 		UseHTTP3Upstreams:      dnsConf.UseHTTP3Upstreams,
 		ServePlainDNS:          dnsConf.ServePlainDNS,
 		PendingRequestsEnabled: dnsConf.PendingRequests.Enabled,
+		GFWListHTTPClient:      externalHTTPClient(tlsMgr),
+		GFWListCachePath:       filepath.Join(config.Filtering.DataDir, "gfwlist_domains.txt"),
 	}
 
 	var initialAddresses []netip.Addr

@@ -58,6 +58,24 @@ func loadTestData(tb testing.TB, casesFileName string, cases any) {
 	require.NoError(tb, err)
 }
 
+func addDefaultGFWListFields(tb testing.TB, data json.RawMessage) (updated []byte) {
+	tb.Helper()
+
+	var obj map[string]any
+	err := json.Unmarshal(data, &obj)
+	require.NoError(tb, err)
+
+	obj["gfwlist_enabled"] = false
+	obj["gfwlist_url"] = defaultGFWListURL
+	obj["gfwlist_upstream_dns"] = []string{}
+	obj["gfwlist_refresh_interval"] = defaultGFWListRefreshInterval
+
+	updated, err = json.Marshal(obj)
+	require.NoError(tb, err)
+
+	return updated
+}
+
 const (
 	jsonExt = ".json"
 
@@ -146,7 +164,7 @@ func TestDNSForwardHTTP_handleGetConfig(t *testing.T) {
 
 			cType := w.Header().Get(httphdr.ContentType)
 			assert.Equal(t, aghhttp.HdrValApplicationJSON, cType)
-			assert.JSONEq(t, string(caseWant), w.Body.String())
+			assert.JSONEq(t, string(addDefaultGFWListFields(t, caseWant)), w.Body.String())
 		})
 	}
 }
@@ -312,7 +330,7 @@ func TestDNSForwardHTTP_handleSetConfig(t *testing.T) {
 			w.Body.Reset()
 
 			s.handleGetConfig(w, httptest.NewRequest(http.MethodGet, "/", nil))
-			assert.JSONEq(t, string(caseData.Want), w.Body.String())
+			assert.JSONEq(t, string(addDefaultGFWListFields(t, caseData.Want)), w.Body.String())
 			w.Body.Reset()
 		})
 	}

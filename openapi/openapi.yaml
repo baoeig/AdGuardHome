@@ -1586,6 +1586,22 @@
           - '1.1.1.1:53'
         'upstream_dns_file':
           'type': 'string'
+        'gfwlist_enabled':
+          'type': 'boolean'
+          'description': 'Enables routing GFWList domains through dedicated upstream servers.'
+        'gfwlist_url':
+          'type': 'string'
+          'description': 'URL of a Base64-encoded GFWList.'
+        'gfwlist_upstream_dns':
+          'type': 'array'
+          'description': 'Upstream DNS servers used for domains from GFWList.'
+          'items':
+            'type': 'string'
+        'gfwlist_refresh_interval':
+          'type': 'integer'
+          'minimum': 1
+          'maximum': 168
+          'description': 'Interval in hours between GFWList refreshes.'
         'protection_enabled':
           'type': 'boolean'
         'ratelimit':

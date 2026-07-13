@@ -29,6 +29,10 @@ type FormData = {
     use_private_ptr_resolvers: boolean;
     resolve_clients: boolean;
     upstream_timeout: number;
+    gfwlist_enabled: boolean;
+    gfwlist_url: string;
+    gfwlist_upstream_dns: string;
+    gfwlist_refresh_interval: number;
 };
 
 type FormProps = {
@@ -57,10 +61,16 @@ const Form = ({ initialValues, onSubmit }: FormProps) => {
             use_private_ptr_resolvers: initialValues?.use_private_ptr_resolvers || false,
             resolve_clients: initialValues?.resolve_clients || false,
             upstream_timeout: initialValues?.upstream_timeout || 0,
+            gfwlist_enabled: initialValues?.gfwlist_enabled || false,
+            gfwlist_url:
+                initialValues?.gfwlist_url || 'https://fastly.jsdelivr.net/gh/gfwlist/gfwlist/gfwlist.txt',
+            gfwlist_upstream_dns: initialValues?.gfwlist_upstream_dns || '',
+            gfwlist_refresh_interval: initialValues?.gfwlist_refresh_interval || 24,
         },
     });
 
     const upstream_dns = watch('upstream_dns');
+    const gfwlist_enabled = watch('gfwlist_enabled');
     const processingTestUpstream = useSelector((state: RootState) => state.settings.processingTestUpstream);
     const processingSetConfig = useSelector((state: RootState) => state.dnsConfig.processingSetConfig);
     const defaultLocalPtrUpstreams = useSelector((state: RootState) => state.dnsConfig.default_local_ptr_upstreams);
@@ -160,6 +170,96 @@ const Form = ({ initialValues, onSubmit }: FormProps) => {
                             />
                         )}
                     />
+                </div>
+
+                <div className="col-12">
+                    <hr />
+                </div>
+
+                <div className="col-12">
+                    <Controller
+                        name="gfwlist_enabled"
+                        control={control}
+                        render={({ field }) => (
+                            <Checkbox
+                                {...field}
+                                data-testid="gfwlist_enabled"
+                                title={t('gfwlist_upstream_title')}
+                                subtitle={t('gfwlist_upstream_desc')}
+                                disabled={processingSetConfig}
+                            />
+                        )}
+                    />
+
+                    <div className="mt-4">
+                        <label className="form__label form__label--with-desc" htmlFor="gfwlist_url">
+                            {t('gfwlist_url')}
+                        </label>
+                        <Controller
+                            name="gfwlist_url"
+                            control={control}
+                            rules={{ validate: gfwlist_enabled ? validateRequiredValue : undefined }}
+                            render={({ field }) => (
+                                <Input
+                                    {...field}
+                                    type="url"
+                                    id="gfwlist_url"
+                                    data-testid="gfwlist_url"
+                                    placeholder="https://fastly.jsdelivr.net/gh/gfwlist/gfwlist/gfwlist.txt"
+                                    disabled={!gfwlist_enabled || processingSetConfig}
+                                />
+                            )}
+                        />
+                    </div>
+
+                    <div className="mt-4">
+                        <label className="form__label form__label--with-desc" htmlFor="gfwlist_upstream_dns">
+                            {t('gfwlist_upstream_dns')}
+                        </label>
+                        <div className="form__desc form__desc--top">{t('gfwlist_upstream_dns_desc')}</div>
+                        <Controller
+                            name="gfwlist_upstream_dns"
+                            control={control}
+                            rules={{ validate: gfwlist_enabled ? validateRequiredValue : undefined }}
+                            render={({ field }) => (
+                                <Textarea
+                                    {...field}
+                                    id="gfwlist_upstream_dns"
+                                    data-testid="gfwlist_upstream_dns"
+                                    placeholder="tls://1.1.1.1"
+                                    disabled={!gfwlist_enabled || processingSetConfig}
+                                    trimOnBlur
+                                />
+                            )}
+                        />
+                    </div>
+
+                    <div className="mt-4 col-md-7 pl-0">
+                        <label className="form__label form__label--with-desc" htmlFor="gfwlist_refresh_interval">
+                            {t('gfwlist_refresh_interval')}
+                        </label>
+                        <Controller
+                            name="gfwlist_refresh_interval"
+                            control={control}
+                            rules={{ validate: gfwlist_enabled ? validateRequiredValue : undefined }}
+                            render={({ field }) => (
+                                <Input
+                                    {...field}
+                                    type="number"
+                                    id="gfwlist_refresh_interval"
+                                    data-testid="gfwlist_refresh_interval"
+                                    disabled={!gfwlist_enabled || processingSetConfig}
+                                    min={1}
+                                    max={168}
+                                    onChange={(e) => field.onChange(toNumber(e.target.value))}
+                                />
+                            )}
+                        />
+                    </div>
+                </div>
+
+                <div className="col-12">
+                    <hr />
                 </div>
 
                 <div className="col-12">

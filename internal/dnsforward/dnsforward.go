@@ -47,6 +47,10 @@ var defaultDNS = []string{
 }
 var defaultBootstrap = []string{"9.9.9.10", "149.112.112.10", "2620:fe::10", "2620:fe::fe:10"}
 
+const defaultGFWListURL = "https://fastly.jsdelivr.net/gh/gfwlist/gfwlist/gfwlist.txt"
+
+const defaultGFWListRefreshInterval uint32 = 24
+
 // Often requested by all kinds of DNS probes
 var defaultBlockedHosts = []string{"version.bind", "id.server", "hostname.bind"}
 
@@ -179,6 +183,9 @@ type Server struct {
 	// serverLock protects Server.
 	serverLock sync.RWMutex
 
+	// gfwListRefreshCancel cancels the current GFWList refresh loop.
+	gfwListRefreshCancel context.CancelFunc
+
 	// protectionUpdateInProgress is used to make sure that only one goroutine
 	// updating the protection configuration after a pause is running at a time.
 	protectionUpdateInProgress atomic.Bool
@@ -305,6 +312,7 @@ func (s *Server) WriteDiskConfig(c *Config) {
 	c.BlockedHosts = slices.Clone(sc.BlockedHosts)
 	c.TrustedProxies = slices.Clone(sc.TrustedProxies)
 	c.UpstreamDNS = slices.Clone(sc.UpstreamDNS)
+	c.GFWList.UpstreamDNS = slices.Clone(sc.GFWList.UpstreamDNS)
 }
 
 // LocalPTRResolvers returns the current local PTR resolver configuration.
@@ -473,9 +481,64 @@ func (s *Server) startLocked(ctx context.Context) error {
 	err := s.dnsProxy.Start(ctx)
 	if err == nil {
 		s.isRunning = true
+		s.startGFWListRefreshLocked()
 	}
 
 	return err
+}
+
+func (s *Server) startGFWListRefreshLocked() {
+	if s.gfwListRefreshCancel != nil {
+		s.gfwListRefreshCancel()
+		s.gfwListRefreshCancel = nil
+	}
+	if !s.conf.GFWList.Enabled {
+		return
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	s.gfwListRefreshCancel = cancel
+	interval := time.Duration(s.conf.GFWList.RefreshIntervalHours) * time.Hour
+
+	go s.runGFWListRefresh(ctx, interval)
+}
+
+func (s *Server) runGFWListRefresh(ctx context.Context, interval time.Duration) {
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			s.refreshGFWList(ctx)
+		}
+	}
+}
+
+func (s *Server) refreshGFWList(loopCtx context.Context) {
+	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+	defer cancel()
+
+	s.serverLock.Lock()
+	defer s.serverLock.Unlock()
+
+	if loopCtx.Err() != nil || !s.isRunning {
+		return
+	}
+
+	_, err := s.conf.loadGFWListUpstreams(ctx, s.logger)
+	if err != nil {
+		s.logger.ErrorContext(ctx, "preparing gfwlist refresh", slogutil.KeyError, err)
+
+		return
+	}
+
+	err = s.reconfigureLocked(ctx, nil)
+	if err != nil {
+		s.logger.ErrorContext(ctx, "refreshing gfwlist", slogutil.KeyError, err)
+	}
 }
 
 // Prepare initializes parameters of s using data from conf.  conf must not be
@@ -543,6 +606,13 @@ func (s *Server) prepareUpstreamSettings(ctx context.Context, boot upstream.Reso
 	if err != nil {
 		return fmt.Errorf("loading upstreams: %w", err)
 	}
+
+	var gfwListUpstreams []string
+	gfwListUpstreams, err = s.conf.loadGFWListUpstreams(ctx, s.logger)
+	if err != nil {
+		return fmt.Errorf("loading gfwlist upstreams: %w", err)
+	}
+	upstreams = append(upstreams, gfwListUpstreams...)
 
 	uc, err := newUpstreamConfig(ctx, s.logger, upstreams, defaultDNS, &upstream.Options{
 		Logger:       aghslog.NewForUpstream(s.baseLogger, aghslog.UpstreamTypeMain),
@@ -793,6 +863,11 @@ func (s *Server) stopLocked(ctx context.Context) {
 	// This will require filtering all the non-critical errors in
 	// [upstream.Upstream] implementations.
 
+	if s.gfwListRefreshCancel != nil {
+		s.gfwListRefreshCancel()
+		s.gfwListRefreshCancel = nil
+	}
+
 	if s.dnsProxy != nil {
 		err := s.dnsProxy.Shutdown(ctx)
 		if err != nil {
@@ -848,6 +923,11 @@ func (s *Server) proxy() (p *proxy.Proxy) {
 func (s *Server) Reconfigure(ctx context.Context, conf *ServerConfig) error {
 	s.serverLock.Lock()
 	defer s.serverLock.Unlock()
+
+	return s.reconfigureLocked(ctx, conf)
+}
+
+func (s *Server) reconfigureLocked(ctx context.Context, conf *ServerConfig) error {
 
 	s.logger.InfoContext(ctx, "starting reconfiguring server")
 	defer s.logger.InfoContext(ctx, "finished reconfiguring server")

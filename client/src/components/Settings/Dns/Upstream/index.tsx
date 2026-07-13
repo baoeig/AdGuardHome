@@ -20,6 +20,10 @@ const Upstream = () => {
         local_ptr_upstreams,
         use_private_ptr_resolvers,
         upstream_timeout,
+        gfwlist_enabled,
+        gfwlist_url,
+        gfwlist_upstream_dns,
+        gfwlist_refresh_interval,
     } = useSelector((state: RootState) => state.dnsConfig, shallowEqual);
 
     const upstream_dns_file = useSelector((state: RootState) => state.dnsConfig.upstream_dns_file);
@@ -34,6 +38,10 @@ const Upstream = () => {
             local_ptr_upstreams,
             use_private_ptr_resolvers,
             upstream_timeout,
+            gfwlist_enabled,
+            gfwlist_url,
+            gfwlist_upstream_dns,
+            gfwlist_refresh_interval,
         } = values;
 
         const dnsConfig = {
@@ -44,6 +52,10 @@ const Upstream = () => {
             local_ptr_upstreams,
             use_private_ptr_resolvers,
             upstream_timeout,
+            gfwlist_enabled,
+            gfwlist_url,
+            gfwlist_upstream_dns,
+            gfwlist_refresh_interval,
             ...(upstream_dns_file ? null : { upstream_dns }),
         };
 
@@ -68,6 +80,10 @@ const Upstream = () => {
                             local_ptr_upstreams,
                             use_private_ptr_resolvers,
                             upstream_timeout,
+                            gfwlist_enabled,
+                            gfwlist_url,
+                            gfwlist_upstream_dns,
+                            gfwlist_refresh_interval,
                         }}
                         onSubmit={handleSubmit}
                     />
