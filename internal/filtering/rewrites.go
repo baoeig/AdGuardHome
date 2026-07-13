@@ -10,6 +10,7 @@ import (
 
 	"github.com/AdguardTeam/golibs/errors"
 	"github.com/AdguardTeam/golibs/logutil/slogutil"
+	"github.com/AdguardTeam/golibs/netutil"
 	"github.com/miekg/dns"
 )
 
@@ -93,6 +94,14 @@ func (rw *LegacyRewrite) normalize(ctx context.Context, l *slog.Logger) (err err
 	ip, err := netip.ParseAddr(rw.Answer)
 	if err != nil {
 		l.DebugContext(ctx, "normalizing legacy rewrite", slogutil.KeyError, err)
+
+		// Not an IP address, treat as CNAME target, but validate as a domain
+		// name first.
+		err = netutil.ValidateDomainName(rw.Answer)
+		if err != nil {
+			return fmt.Errorf("invalid CNAME target %q: %w", rw.Answer, err)
+		}
+
 		rw.Type = dns.TypeCNAME
 
 		return nil
