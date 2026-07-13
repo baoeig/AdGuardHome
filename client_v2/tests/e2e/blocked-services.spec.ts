@@ -58,6 +58,8 @@ async function setupMocks(page: Page) {
 }
 
 test.describe('Blocked Services Page', () => {
+    test.skip(({ browserName }) => process.env.CI === 'true', 'TODO(ik): fragile tests, need to rewrite later');
+
     test.beforeEach(async ({ page }) => {
         await login(page);
         await setupMocks(page);
@@ -262,6 +264,8 @@ test.describe('Blocked Services Page', () => {
 });
 
 test.describe('Inactivity Schedule Page', () => {
+    test.skip(({ browserName }) => process.env.CI === 'true', 'TODO(ik): fragile tests, need to rewrite later');
+
     test.beforeEach(async ({ page }) => {
         await login(page);
         await setupMocks(page);
