@@ -313,14 +313,14 @@ func (s *v4Server) rmDynamicLease(lease *dhcpsvc.Lease) (err error) {
 	return nil
 }
 
-const (
+var (
 	// ErrDupHostname is returned by addLease, validateStaticLease when the
 	// modified lease has a not empty non-unique hostname.
-	ErrDupHostname = errors.Error("hostname is not unique")
+	ErrDupHostname error = fmt.Errorf("hostname: %w", errors.ErrDuplicated)
 
 	// ErrDupIP is returned by addLease, validateStaticLease when the modified
 	// lease has a non-unique IP address.
-	ErrDupIP = errors.Error("ip address is not unique")
+	ErrDupIP error = fmt.Errorf("ip address: %w", errors.ErrDuplicated)
 )
 
 // addLease adds a dynamic or static lease.
@@ -403,27 +403,6 @@ func (s *v4Server) AddStaticLease(l *dhcpsvc.Lease) (err error) {
 	if err != nil {
 		// Don't wrap the error, because it's informative enough as is.
 		return err
-	}
-
-	if hostname := l.Hostname; hostname != "" {
-		hostname, err = normalizeHostname(hostname)
-		if err != nil {
-			// Don't wrap the error, because it's informative enough as is.
-			return err
-		}
-
-		err = netutil.ValidateHostname(hostname)
-		if err != nil {
-			return fmt.Errorf("validating hostname: %w", err)
-		}
-
-		// Don't check for hostname uniqueness, since we try to emulate dnsmasq
-		// here, which means that rmDynamicLease below will simply empty the
-		// hostname of the dynamic lease if there even is one.  In case a static
-		// lease with the same name already exists, addLease will return an
-		// error and the lease won't be added.
-
-		l.Hostname = hostname
 	}
 
 	err = s.updateStaticLease(l)
@@ -518,6 +497,17 @@ func (s *v4Server) validateStaticLease(l *dhcpsvc.Lease) (err error) {
 func (s *v4Server) updateStaticLease(l *dhcpsvc.Lease) (err error) {
 	s.leasesLock.Lock()
 	defer s.leasesLock.Unlock()
+
+	err = s.validateStaticLease(l)
+	if err != nil {
+		switch err {
+		case ErrDupHostname, ErrDupIP:
+			// Go on.
+		default:
+			// Don't wrap the error, because it's informative enough as is.
+			return err
+		}
+	}
 
 	err = s.rmDynamicLease(l)
 	if err != nil {
