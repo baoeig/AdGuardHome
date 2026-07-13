@@ -241,7 +241,8 @@ func TestTLSManager_Reload(t *testing.T) {
 	)
 
 	globalContext.dnsServer, err = dnsforward.NewServer(dnsforward.DNSCreateParams{
-		Logger: testLogger,
+		Logger:            testLogger,
+		TLSConfigProvider: aghtls.EmptyTLSConfigProvider{},
 	})
 	require.NoError(t, err)
 

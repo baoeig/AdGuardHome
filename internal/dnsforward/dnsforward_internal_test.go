@@ -467,8 +467,9 @@ func TestServer_timeout(t *testing.T) {
 		}
 
 		s, err := NewServer(DNSCreateParams{
-			DNSFilter: createTestDNSFilter(t),
-			Logger:    testLogger,
+			DNSFilter:         createTestDNSFilter(t),
+			Logger:            testLogger,
+			TLSConfigProvider: testTLSConfigProvider,
 		})
 		require.NoError(t, err)
 
@@ -480,8 +481,9 @@ func TestServer_timeout(t *testing.T) {
 
 	t.Run("default", func(t *testing.T) {
 		s, err := NewServer(DNSCreateParams{
-			DNSFilter: createTestDNSFilter(t),
-			Logger:    testLogger,
+			DNSFilter:         createTestDNSFilter(t),
+			Logger:            testLogger,
+			TLSConfigProvider: testTLSConfigProvider,
 		})
 		require.NoError(t, err)
 
@@ -514,7 +516,8 @@ func TestServer_Prepare_fallbacks(t *testing.T) {
 	}
 
 	s, err := NewServer(DNSCreateParams{
-		Logger: testLogger,
+		Logger:            testLogger,
+		TLSConfigProvider: testTLSConfigProvider,
 	})
 	require.NoError(t, err)
 
@@ -1177,10 +1180,11 @@ func TestBlockedCustomIP(t *testing.T) {
 		OnIPByHost: func(host string) (_ netip.Addr) { panic(testutil.UnexpectedCall(host)) },
 	}
 	s, err := NewServer(DNSCreateParams{
-		DHCPServer:  dhcp,
-		DNSFilter:   f,
-		PrivateNets: netutil.SubnetSetFunc(netutil.IsLocallyServed),
-		Logger:      testLogger,
+		DHCPServer:        dhcp,
+		DNSFilter:         f,
+		PrivateNets:       netutil.SubnetSetFunc(netutil.IsLocallyServed),
+		Logger:            testLogger,
+		TLSConfigProvider: testTLSConfigProvider,
 	})
 	require.NoError(t, err)
 
@@ -1390,10 +1394,11 @@ func TestRewrite(t *testing.T) {
 		OnIPByHost: func(host string) (_ netip.Addr) { panic(testutil.UnexpectedCall(host)) },
 	}
 	s, err := NewServer(DNSCreateParams{
-		DHCPServer:  dhcp,
-		DNSFilter:   f,
-		PrivateNets: netutil.SubnetSetFunc(netutil.IsLocallyServed),
-		Logger:      testLogger,
+		DHCPServer:        dhcp,
+		DNSFilter:         f,
+		PrivateNets:       netutil.SubnetSetFunc(netutil.IsLocallyServed),
+		Logger:            testLogger,
+		TLSConfigProvider: testTLSConfigProvider,
 	})
 	require.NoError(t, err)
 
@@ -1527,9 +1532,10 @@ func TestPTRResponseFromDHCPLeases(t *testing.T) {
 				return "myhost"
 			},
 		},
-		PrivateNets: netutil.SubnetSetFunc(netutil.IsLocallyServed),
-		Logger:      testLogger,
-		LocalDomain: localDomain,
+		PrivateNets:       netutil.SubnetSetFunc(netutil.IsLocallyServed),
+		Logger:            testLogger,
+		LocalDomain:       localDomain,
+		TLSConfigProvider: testTLSConfigProvider,
 	})
 	require.NoError(t, err)
 
@@ -1616,10 +1622,11 @@ func TestPTRResponseFromHosts(t *testing.T) {
 
 	var s *Server
 	s, err = NewServer(DNSCreateParams{
-		DHCPServer:  dhcp,
-		DNSFilter:   flt,
-		PrivateNets: netutil.SubnetSetFunc(netutil.IsLocallyServed),
-		Logger:      testLogger,
+		DHCPServer:        dhcp,
+		DNSFilter:         flt,
+		PrivateNets:       netutil.SubnetSetFunc(netutil.IsLocallyServed),
+		Logger:            testLogger,
+		TLSConfigProvider: testTLSConfigProvider,
 	})
 	require.NoError(t, err)
 

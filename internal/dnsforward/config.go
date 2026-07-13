@@ -786,7 +786,7 @@ func (s *Server) replaceGetCertificate(orig *tls.Config) {
 		slices.Sort(dnsNames)
 		if s.conf.TLSConf.StrictSNICheck && !anyNameMatches(dnsNames, chi.ServerName) {
 			s.logger.Warn(
-				"unknown sni in Client Hello",
+				"unknown sni in client hello",
 				"server_name", chi.ServerName,
 			)
 

@@ -15,6 +15,7 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -156,6 +157,8 @@ func newTLSManager(ctx context.Context, conf *tlsManagerConfig) (m *tlsManager, 
 
 		return m, fmt.Errorf("parsing tls certificate: %w", err)
 	}
+
+	slices.Sort(cert.Leaf.DNSNames)
 
 	m.tlsConf = &tls.Config{
 		RootCAs:        m.rootCerts,
@@ -898,6 +901,8 @@ func (m *tlsManager) updateTLSCert(extTLSConf *tlsConfigSettings) (err error) {
 	if err != nil {
 		return fmt.Errorf("loading tls certificate: %w", err)
 	}
+
+	slices.Sort(cert.Leaf.DNSNames)
 
 	if m.tlsConf == nil {
 		m.tlsConf = &tls.Config{

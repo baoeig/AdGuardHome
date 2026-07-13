@@ -208,7 +208,7 @@ type DNSCreateParams struct {
 	Anonymizer  *aghnet.IPMut
 	EtcHosts    *aghnet.HostsContainer
 
-	// TLSConfig provider provides TLS configuration for the server.  It must
+	// TLSConfigProvider provides a TLS configuration for the server.  It must
 	// not be nil.
 	TLSConfigProvider aghtls.TLSConfigProvider
 
@@ -239,8 +239,6 @@ func NewServer(p DNSCreateParams) (s *Server, err error) {
 	if p.Anonymizer == nil {
 		p.Anonymizer = aghnet.NewIPMut(nil)
 	}
-
-	p.TLSConfigProvider = cmp.Or[aghtls.TLSConfigProvider](p.TLSConfigProvider, aghtls.EmptyTLSConfigProvider{})
 
 	var etcHosts upstream.Resolver
 	if p.EtcHosts != nil {
