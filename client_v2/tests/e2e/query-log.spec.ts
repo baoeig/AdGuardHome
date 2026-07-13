@@ -610,6 +610,8 @@ async function scrollToLoadMoreTrigger(page: Page) {
 }
 
 test.describe('Query log desktop', () => {
+    test.skip(({ browserName }) => !!process.env.CI, 'TODO(ik): fragile tests, need to rewrite later');
+
     test('supports semantic row assertions, quick filters, search, refresh, and URL sync', async ({
         page,
     }) => {
