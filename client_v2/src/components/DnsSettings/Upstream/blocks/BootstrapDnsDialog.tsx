@@ -28,7 +28,6 @@ export const BootstrapDnsDialog = (props: Props) => {
             description={
                 <>
                     <p>{intl.getMessage('dns_bootstrap_dns_desc')}</p>
-                    <p>{intl.getMessage('dns_bootstrap_dns_desc_2')}</p>
                 </>
             }
             onClose={props.onClose}
@@ -50,6 +49,7 @@ export const BootstrapDnsDialog = (props: Props) => {
                     placeholder={intl.getMessage('dns_bootstrap_dns_placeholder')}
                     errorMessage={field.error()}
                     size="medium"
+                    highlightComments
                 />
             </div>
         </ConfigDialog>

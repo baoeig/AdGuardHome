@@ -1,6 +1,7 @@
 package dhcpsvc
 
 import (
+	"cmp"
 	"context"
 	"fmt"
 	"net/netip"
@@ -21,6 +22,8 @@ func (srv *DHCPServer) serveEther4(ctx context.Context, iface *dhcpInterfaceV4, 
 
 	src := gopacket.NewPacketSource(nd, nd.LinkType())
 
+	// TODO(e.burkov):  Use [gopacket.PacketSource.PacketsCtx] and cancel
+	// context on shutdown.
 	for pkt := range src.Packets() {
 		fd, err := newFrameData4(pkt, nd)
 		if err != nil {
@@ -301,7 +304,17 @@ func (iface *dhcpInterfaceV4) handleInitReboot(
 		return
 	}
 
-	iface.updateAndRespond(ctx, l, req, lease, fd, idOpt)
+	lease.Hostname = cmp.Or(hostname4(req), lease.Hostname)
+
+	err := iface.updateLease(ctx, lease)
+	if err != nil {
+		l.ErrorContext(ctx, "init-reboot request failed", slogutil.KeyError, err)
+		iface.respondNAK(ctx, req, fd, idOpt)
+
+		return
+	}
+
+	iface.respondACK(ctx, req, fd, lease, idOpt)
 }
 
 // handleRenew handles messages of type DHCPREQUEST in RENEWING or REBINDING
@@ -340,7 +353,18 @@ func (iface *dhcpInterfaceV4) handleRenew(
 		return
 	}
 
-	iface.updateAndRespond(ctx, l, req, lease, fd, idOpt)
+	lease.Hostname = cmp.Or(hostname4(req), lease.Hostname)
+
+	err := iface.updateLease(ctx, lease)
+	if err != nil {
+		l.ErrorContext(ctx, "renew request failed", slogutil.KeyError, err)
+
+		iface.respondNAK(ctx, req, fd, idOpt)
+
+		return
+	}
+
+	iface.respondACK(ctx, req, fd, lease, idOpt)
 }
 
 // handleDecline handles messages of type DHCPDECLINE.  req must be a
@@ -427,7 +451,7 @@ func (iface *dhcpInterfaceV4) handleRelease(ctx context.Context, req *layers.DHC
 		return
 	}
 
-	err := iface.common.index.remove(ctx, l, lease, iface.common)
+	err := iface.common.index.remove(ctx, lease, iface.common)
 	if err != nil {
 		l.ErrorContext(ctx, "removing lease", slogutil.KeyError, err)
 

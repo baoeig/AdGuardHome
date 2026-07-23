@@ -162,29 +162,6 @@ export const CLIENT_ID = {
     IP: 'ip',
 };
 
-export const MENU_URLS = {
-    root: '/',
-    logs: '/logs',
-    guide: '/guide',
-};
-
-export const SETTINGS_URLS = {
-    encryption: '/encryption',
-    dhcp: '/dhcp',
-    dhcpLeases: '/dhcp/leases',
-    dns: '/dns',
-    settings: '/settings',
-    clients: '/clients',
-};
-
-export const FILTERS_URLS = {
-    dns_blocklists: '/filters',
-    dns_allowlists: '/dns_allowlists',
-    dns_rewrites: '/dns_rewrites',
-    user_rules: '/user_rules',
-    blocked_services: '/blocked_services',
-};
-
 export const ENCRYPTION_SOURCE = {
     PATH: 'path',
     CONTENT: 'content',
@@ -544,21 +521,6 @@ export const DHCP_VALUES_PLACEHOLDERS = {
     },
 };
 
-export const DHCP_DESCRIPTION_PLACEHOLDERS = {
-    ipv4: {
-        gateway_ip: 'dhcp_form_gateway_input',
-        subnet_mask: 'dhcp_form_subnet_input',
-        range_start: 'dhcp_form_range_start',
-        range_end: 'dhcp_form_range_end',
-        lease_duration: 'dhcp_form_lease_input',
-    },
-    ipv6: {
-        range_start: 'dhcp_form_range_start',
-        range_end: 'dhcp_form_range_end',
-        lease_duration: 'dhcp_form_lease_input',
-    },
-};
-
 export const TOAST_TRANSITION_TIMEOUT = 500;
 
 export const TOAST_TYPES = {
@@ -593,8 +555,9 @@ export const CACHE_CONFIG_FIELDS = {
     cache_ttl_max: 'cache_ttl_max',
 };
 
-export const isFirefox = navigator.userAgent.indexOf('Firefox') !== -1;
 export const COMMENT_LINE_DEFAULT_TOKEN = '#';
+export const COMMENT_LINE_TOKENS = ['#', '!'] as const;
+export type CommentLineToken = (typeof COMMENT_LINE_TOKENS)[number];
 
 export const MOBILE_CONFIG_LINKS = {
     DOT: 'apple/dot.mobileconfig',

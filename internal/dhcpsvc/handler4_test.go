@@ -2,15 +2,13 @@ package dhcpsvc_test
 
 import (
 	"cmp"
+	"context"
 	"net"
 	"net/netip"
 	"testing"
-	"time"
 
 	"github.com/AdguardTeam/AdGuardHome/internal/dhcpsvc"
-	"github.com/AdguardTeam/golibs/logutil/slogutil"
 	"github.com/AdguardTeam/golibs/testutil"
-	"github.com/AdguardTeam/golibs/testutil/servicetest"
 	"github.com/gopacket/gopacket"
 	"github.com/gopacket/gopacket/layers"
 	"github.com/stretchr/testify/assert"
@@ -28,58 +26,10 @@ var testIPv4InterfacesConf = map[string]*dhcpsvc.InterfaceConfig{
 	},
 }
 
-// Lease hostnames for test cases.
-//
-// NOTE: Keep in sync with testdata.
-const (
-	// testLease4HostnameStatic is the test hostname for a static DHCPv4 lease.
-	testLease4HostnameStatic = "static4"
-
-	// testLease4HostnameDynamic is the test hostname for a dynamic DHCPv4
-	// lease.
-	testLease4HostnameDynamic = "dynamic4"
-
-	// testLease4HostnameExpired is the test hostname for an expired DHCPv4
-	// lease.
-	testLease4HostnameExpired = "expired4"
-)
-
 // testXid is a common transaction ID for DHCPv4 tests.
 //
 // TODO(e.burkov):  Generate unique IDs when they will be actually used.
 const testXid = 1
-
-// IP addresses for test cases.
-//
-// NOTE: Keep in sync with testdata.
-var (
-	// testIPv4Unknown is the test IP address for an unknown client.
-	testIPv4Unknown = netip.MustParseAddr("192.0.2.142")
-
-	// testIPv4Static is the test IP address for a known static lease.
-	testIPv4Static = netip.MustParseAddr("192.0.2.101")
-
-	// testIPv4Dynamic is the test IP address for a known dynamic lease.
-	testIPv4Dynamic = netip.MustParseAddr("192.0.2.102")
-
-	// testIPv4OtherSubnet is the test IP address for a client on another
-	// subnet.
-	testIPv4OtherSubnet = netip.MustParseAddr(testAnotherGatewayIPv4Str)
-
-	// testIPv4RelayAgent is the test IP address of the relay agent.
-	testIPv4RelayAgent = netip.MustParseAddr("10.0.0.1")
-)
-
-// Time-related variables for test cases.
-//
-// NOTE: Keep in sync with testdata.
-var (
-	// testExpiryDynamicLease is the test expiry time for a dynamic lease.
-	testExpiryDynamicLease = time.Date(2025, 1, 1, 10, 1, 1, 0, time.UTC)
-
-	// testTTLDynamicLease is the test TTL for the dynamic lease.
-	testTTLDynamicLease = testExpiryDynamicLease.Sub(testCurrentTime)
-)
 
 func TestDHCPServer_ServeEther4_discover(t *testing.T) {
 	t.Parallel()
@@ -111,7 +61,7 @@ func TestDHCPServer_ServeEther4_discover(t *testing.T) {
 		wantOpts: layers.DHCPOptions{
 			newOptMessageType(t, layers.DHCPMsgTypeOffer),
 			newOptServerID(t, testIfaceAddrV4),
-			newOptLeaseTime(t, testTTLDynamicLease),
+			newOptLeaseTime(t, testLeaseTTL),
 			newOptHostname(t, testLease4HostnameDynamic),
 		},
 	}, {
@@ -127,16 +77,15 @@ func TestDHCPServer_ServeEther4_discover(t *testing.T) {
 
 	for _, tc := range testCases {
 		req := testutil.RequireTypeAssert[*layers.DHCPv4](t, tc.in.Layer(layers.LayerTypeDHCPv4))
-		dbFilePath := newTempDB(t)
 
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 
 			ndMgr, inCh, outCh := newTestNetworkDeviceManager(t, testIfaceAddrV4)
 			startTestDHCPServer(t, &dhcpsvc.Config{
+				Database:             newTestDatabase(t, testLeases),
 				Interfaces:           testIPv4InterfacesConf,
 				NetworkDeviceManager: ndMgr,
-				DBFilePath:           dbFilePath,
 				Enabled:              true,
 			})
 
@@ -156,9 +105,9 @@ func TestDHCPServer_ServeEther4_discoverExpired(t *testing.T) {
 	ndMgr, inCh, outCh := newTestNetworkDeviceManager(t, testIfaceAddrV4)
 
 	startTestDHCPServer(t, &dhcpsvc.Config{
+		Database:             newTestDatabase(t, testLeases),
 		Interfaces:           testIPv4InterfacesConf,
 		NetworkDeviceManager: ndMgr,
-		DBFilePath:           newTempDB(t),
 		Enabled:              true,
 	})
 
@@ -171,53 +120,63 @@ func TestDHCPServer_ServeEther4_discoverExpired(t *testing.T) {
 	})
 }
 
+// TODO(e.burkov):  Test static case.
 func TestDHCPServer_ServeEther4_release(t *testing.T) {
 	t.Parallel()
 
-	ipMismatch := testIPv4Dynamic.Next().Next()
-
 	testCases := []struct {
-		req        gopacket.Packet
-		name       string
-		wantChange bool
+		req  gopacket.Packet
+		want *dhcpsvc.Lease
+		name string
 	}{{
-		req:        newDHCPRELEASE(t, testHWDynamic, testIPv4Dynamic),
-		name:       "success",
-		wantChange: true,
+		req: newDHCPRELEASE(t, testHWDynamic, testIPv4Dynamic),
+		want: &dhcpsvc.Lease{
+			IP:       testIPv4Dynamic,
+			HWAddr:   testHWDynamic,
+			Expiry:   testExpiryDynamicLease,
+			Hostname: testLease4HostnameDynamic,
+			IsStatic: false,
+		},
+		name: "success",
 	}, {
-		req:        newDHCPRELEASE(t, testHWUnknown, testIPv4Dynamic),
-		name:       "not_found",
-		wantChange: false,
+		req:  newDHCPRELEASE(t, testHWUnknown, testIPv4Dynamic),
+		want: nil,
+		name: "not_found",
 	}, {
-		req:        newDHCPRELEASE(t, testHWAnother, ipMismatch),
-		name:       "mismatch_ip",
-		wantChange: false,
+		req:  newDHCPRELEASE(t, testHWDynamic, testIPv4Unknown),
+		want: nil,
+		name: "mismatch_ip",
 	}, {
-		req:        newDHCPRELEASE(t, testHWDynamic, testIPv4OtherSubnet),
-		name:       "bad_subnet",
-		wantChange: false,
+		req:  newDHCPRELEASE(t, testHWDynamic, testIPv4OtherSubnet),
+		want: nil,
+		name: "bad_subnet",
 	}}
 
 	for _, tc := range testCases {
-		dbFilePath := newTempDB(t)
-
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 
+			db := newTestDatabase(t, testLeases)
+
+			onStore := func(ctx context.Context, leases []*dhcpsvc.Lease) (err error) {
+				assert.NotContains(testutil.NewPanicT(t), leases, tc.want)
+
+				return nil
+			}
+
+			if tc.want != nil {
+				db.onStore = onStore
+			}
+
 			ndMgr, inCh, _ := newTestNetworkDeviceManager(t, testIfaceAddrV4)
-			srv := newTestDHCPServer(t, &dhcpsvc.Config{
+			startTestDHCPServer(t, &dhcpsvc.Config{
+				Database:             db,
 				Interfaces:           testIPv4InterfacesConf,
 				NetworkDeviceManager: ndMgr,
-				DBFilePath:           dbFilePath,
 				Enabled:              true,
 			})
-			servicetest.RequireRun(t, srv, testTimeout)
-
-			leases := srv.Leases()
 
 			testutil.RequireSend(t, inCh, tc.req, testTimeout)
-
-			assertLeases(t, leases, srv, tc.wantChange)
 		})
 	}
 }
@@ -226,11 +185,11 @@ func TestDHCPServer_ServeEther4_requestSelecting(t *testing.T) {
 	t.Parallel()
 
 	testCases := []struct {
-		discover   gopacket.Packet
-		request    gopacket.Packet
-		name       string
-		wantOpts   layers.DHCPOptions
-		wantChange bool
+		discover gopacket.Packet
+		request  gopacket.Packet
+		want     *dhcpsvc.Lease
+		name     string
+		wantOpts layers.DHCPOptions
 	}{{
 		discover: newDHCPDISCOVER(t, testHWUnknown),
 		request: newDHCPREQUEST(t, &dhcpRequestConfig{
@@ -241,13 +200,19 @@ func TestDHCPServer_ServeEther4_requestSelecting(t *testing.T) {
 			clientHWAddr: testHWUnknown,
 			flags:        dhcpsvc.FlagsBroadcast,
 		}),
+		want: &dhcpsvc.Lease{
+			IP:       testIPv4Conf.RangeStart,
+			HWAddr:   testHWUnknown,
+			Expiry:   testExpiryDynamicLease,
+			Hostname: "",
+			IsStatic: false,
+		},
 		name: "success",
 		wantOpts: layers.DHCPOptions{
 			newOptMessageType(t, layers.DHCPMsgTypeAck),
 			newOptServerID(t, testIfaceAddrV4),
 			newOptLeaseTime(t, testLeaseTTL),
 		},
-		wantChange: true,
 	}, {
 		discover: newDHCPDISCOVER(t, testHWStatic),
 		request: newDHCPREQUEST(t, &dhcpRequestConfig{
@@ -258,25 +223,9 @@ func TestDHCPServer_ServeEther4_requestSelecting(t *testing.T) {
 			clientHWAddr: testHWStatic,
 			flags:        dhcpsvc.FlagsBroadcast,
 		}),
-		name:       "wrong_server_id",
-		wantOpts:   nil,
-		wantChange: false,
-	}, {
-		discover: nil,
-		request: newDHCPREQUEST(t, &dhcpRequestConfig{
-			options: layers.DHCPOptions{
-				newOptRequestIP(t, testIPv4Conf.RangeEnd.Next()),
-				newOptServerID(t, testIfaceAddrV4),
-			},
-			clientHWAddr: testHWUnknown,
-			flags:        dhcpsvc.FlagsBroadcast,
-		}),
-		name: "no_lease",
-		wantOpts: layers.DHCPOptions{
-			newOptMessageType(t, layers.DHCPMsgTypeNak),
-			newOptServerID(t, testIfaceAddrV4),
-		},
-		wantChange: false,
+		want:     nil,
+		name:     "wrong_server_id",
+		wantOpts: nil,
 	}, {
 		discover: newDHCPDISCOVER(t, testHWStatic),
 		request: newDHCPREQUEST(t, &dhcpRequestConfig{
@@ -287,12 +236,12 @@ func TestDHCPServer_ServeEther4_requestSelecting(t *testing.T) {
 			clientHWAddr: testHWStatic,
 			flags:        dhcpsvc.FlagsBroadcast,
 		}),
+		want: nil,
 		name: "wrong_ip",
 		wantOpts: layers.DHCPOptions{
 			newOptMessageType(t, layers.DHCPMsgTypeNak),
 			newOptServerID(t, testIfaceAddrV4),
 		},
-		wantChange: false,
 	}, {
 		discover: newDHCPDISCOVER(t, testHWStatic),
 		request: newDHCPREQUEST(t, &dhcpRequestConfig{
@@ -304,35 +253,40 @@ func TestDHCPServer_ServeEther4_requestSelecting(t *testing.T) {
 			clientIP:     testIPv4Static,
 			flags:        dhcpsvc.FlagsBroadcast,
 		}),
-		name:       "nonzero_ciaddr",
-		wantOpts:   nil,
-		wantChange: false,
+		want:     nil,
+		name:     "nonzero_ciaddr",
+		wantOpts: nil,
 	}}
 
 	for _, tc := range testCases {
-		dbFilePath := newTempDB(t)
-
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 
-			ndMgr, dev, inCh, outCh := newTestNetworkDeviceAndManager(t, testIfaceAddrV4)
-			srv := newTestDHCPServer(t, &dhcpsvc.Config{
-				Logger:               slogutil.NewDiscardLogger(),
-				Interfaces:           testIPv4InterfacesConf,
-				NetworkDeviceManager: ndMgr,
-				DBFilePath:           dbFilePath,
-				Enabled:              true,
-			})
-			servicetest.RequireRun(t, srv, testTimeout)
+			db := newTestDatabase(t, testLeases)
 
-			if tc.discover != nil {
-				testutil.RequireSend(t, inCh, tc.discover, testTimeout)
+			onStore := func(ctx context.Context, leases []*dhcpsvc.Lease) (err error) {
+				assert.Contains(t, leases, tc.want)
 
-				_, ok := testutil.RequireReceive(t, outCh, testTimeout)
-				require.True(t, ok)
+				return nil
 			}
 
-			leases := srv.Leases()
+			if tc.want != nil {
+				db.onStore = onStore
+			}
+
+			ndMgr, dev, inCh, outCh := newTestNetworkDeviceAndManager(t, testIfaceAddrV4)
+			startTestDHCPServer(t, &dhcpsvc.Config{
+				Database:             db,
+				Interfaces:           testIPv4InterfacesConf,
+				Logger:               testLogger,
+				NetworkDeviceManager: ndMgr,
+				Enabled:              true,
+			})
+
+			testutil.RequireSend(t, inCh, tc.discover, testTimeout)
+
+			_, ok := testutil.RequireReceive(t, outCh, testTimeout)
+			require.True(t, ok)
 
 			if tc.wantOpts == nil {
 				dev.onWritePacketData = unexpectedWritePacketData
@@ -341,25 +295,58 @@ func TestDHCPServer_ServeEther4_requestSelecting(t *testing.T) {
 			testutil.RequireSend(t, inCh, tc.request, testTimeout)
 
 			assertValidResponse4(t, dhcpv4FromPacket(t, tc.request), outCh, tc.wantOpts)
-			assertLeases(t, leases, srv, tc.wantChange)
 		})
 	}
 }
 
+func TestDHCPServer_ServeEther4_requestSelectingNoLease(t *testing.T) {
+	t.Parallel()
+
+	request := newDHCPREQUEST(t, &dhcpRequestConfig{
+		options: layers.DHCPOptions{
+			newOptRequestIP(t, testIPv4Conf.RangeEnd.Next()),
+			newOptServerID(t, testIfaceAddrV4),
+		},
+		clientHWAddr: testHWUnknown,
+		flags:        dhcpsvc.FlagsBroadcast,
+	})
+
+	db := newTestDatabase(t, testLeases)
+
+	ndMgr, inCh, outCh := newTestNetworkDeviceManager(t, testIfaceAddrV4)
+	startTestDHCPServer(t, &dhcpsvc.Config{
+		Database:             db,
+		Interfaces:           testIPv4InterfacesConf,
+		Logger:               testLogger,
+		NetworkDeviceManager: ndMgr,
+		Enabled:              true,
+	})
+
+	testutil.RequireSend(t, inCh, request, testTimeout)
+
+	assertValidResponse4(t, dhcpv4FromPacket(t, request), outCh, layers.DHCPOptions{
+		newOptMessageType(t, layers.DHCPMsgTypeNak),
+		newOptServerID(t, testIfaceAddrV4),
+	})
+}
+
+// TODO(e.burkov):  Test expired.
 func TestDHCPServer_ServeEther4_requestInitReboot(t *testing.T) {
 	t.Parallel()
 
 	testCases := []struct {
 		req      gopacket.Packet
+		want     *dhcpsvc.Lease
 		name     string
 		wantOpts layers.DHCPOptions
 	}{{
-		name: "success",
 		req: newDHCPREQUEST(t, &dhcpRequestConfig{
 			options:      layers.DHCPOptions{newOptRequestIP(t, testIPv4Static)},
 			clientHWAddr: testHWStatic,
 			flags:        dhcpsvc.FlagsBroadcast,
 		}),
+		want: testLease4Static,
+		name: "success",
 		wantOpts: layers.DHCPOptions{
 			newOptMessageType(t, layers.DHCPMsgTypeAck),
 			newOptServerID(t, testIfaceAddrV4),
@@ -367,81 +354,92 @@ func TestDHCPServer_ServeEther4_requestInitReboot(t *testing.T) {
 			newOptHostname(t, testLease4HostnameStatic),
 		},
 	}, {
-		name: "wrong_subnet",
 		req: newDHCPREQUEST(t, &dhcpRequestConfig{
 			options:      layers.DHCPOptions{newOptRequestIP(t, testIPv4OtherSubnet)},
 			clientHWAddr: testHWStatic,
 			flags:        dhcpsvc.FlagsBroadcast,
 		}),
+		want: nil,
+		name: "wrong_subnet",
 		wantOpts: layers.DHCPOptions{
 			newOptMessageType(t, layers.DHCPMsgTypeNak),
 			newOptServerID(t, testIfaceAddrV4),
 		},
 	}, {
-		name: "no_lease",
 		req: newDHCPREQUEST(t, &dhcpRequestConfig{
 			options:      layers.DHCPOptions{newOptRequestIP(t, testIPv4Static)},
 			clientHWAddr: testHWUnknown,
 			flags:        dhcpsvc.FlagsBroadcast,
 		}),
+		want:     nil,
+		name:     "no_lease",
 		wantOpts: nil,
 	}, {
-		name: "wrong_ip",
 		req: newDHCPREQUEST(t, &dhcpRequestConfig{
 			options:      layers.DHCPOptions{newOptRequestIP(t, testIPv4Dynamic)},
 			clientHWAddr: testHWStatic,
 			flags:        dhcpsvc.FlagsBroadcast,
 		}),
+		want: nil,
+		name: "wrong_ip",
 		wantOpts: layers.DHCPOptions{
 			newOptMessageType(t, layers.DHCPMsgTypeNak),
 			newOptServerID(t, testIfaceAddrV4),
 		},
 	}, {
-		name: "wrong_ip_no_broadcast",
 		req: newDHCPREQUEST(t, &dhcpRequestConfig{
 			options:      layers.DHCPOptions{newOptRequestIP(t, testIPv4Dynamic)},
 			clientHWAddr: testHWStatic,
 		}),
+		want: nil,
+		name: "wrong_ip_no_broadcast",
 		wantOpts: layers.DHCPOptions{
 			newOptMessageType(t, layers.DHCPMsgTypeNak),
 			newOptServerID(t, testIfaceAddrV4),
 		},
 	}, {
-		name: "nonzero_ciaddr",
 		req: newDHCPREQUEST(t, &dhcpRequestConfig{
 			options:      layers.DHCPOptions{newOptRequestIP(t, testIPv4Static)},
 			clientHWAddr: testHWStatic,
 			clientIP:     testIPv4Static,
 			flags:        dhcpsvc.FlagsBroadcast,
 		}),
+		want:     nil,
+		name:     "nonzero_ciaddr",
 		wantOpts: nil,
 	}}
 
 	for _, tc := range testCases {
-		dbFilePath := newTempDB(t)
-
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
+
+			db := newTestDatabase(t, testLeases)
+
+			onStore := func(ctx context.Context, leases []*dhcpsvc.Lease) (err error) {
+				assert.Contains(t, leases, tc.want)
+
+				return nil
+			}
+
+			if tc.want != nil {
+				db.onStore = onStore
+			}
 
 			ndMgr, dev, inCh, outCh := newTestNetworkDeviceAndManager(t, testIfaceAddrV4)
 			if tc.wantOpts == nil {
 				dev.onWritePacketData = unexpectedWritePacketData
 			}
 
-			srv := newTestDHCPServer(t, &dhcpsvc.Config{
+			startTestDHCPServer(t, &dhcpsvc.Config{
+				Database:             db,
 				Interfaces:           testIPv4InterfacesConf,
 				NetworkDeviceManager: ndMgr,
-				DBFilePath:           dbFilePath,
 				Enabled:              true,
 			})
-			servicetest.RequireRun(t, srv, testTimeout)
-
-			leases := srv.Leases()
 
 			testutil.RequireSend(t, inCh, tc.req, testTimeout)
 
 			assertValidResponse4(t, dhcpv4FromPacket(t, tc.req), outCh, tc.wantOpts)
-			assertLeases(t, leases, srv, false)
 		})
 	}
 }
@@ -450,29 +448,32 @@ func TestDHCPServer_ServeEther4_requestRenewSuccess(t *testing.T) {
 	t.Parallel()
 
 	testCases := []struct {
-		name     string
 		req      gopacket.Packet
+		want     *dhcpsvc.Lease
+		name     string
 		wantOpts layers.DHCPOptions
 	}{{
-		name: "success",
 		req: newDHCPREQUEST(t, &dhcpRequestConfig{
 			clientHWAddr: testHWDynamic,
 			clientIP:     testIPv4Dynamic,
 			flags:        dhcpsvc.FlagsBroadcast,
 		}),
+		want: testLease4Dynamic,
+		name: "success",
 		wantOpts: layers.DHCPOptions{
 			newOptMessageType(t, layers.DHCPMsgTypeAck),
 			newOptServerID(t, testIfaceAddrV4),
-			newOptLeaseTime(t, testTTLDynamicLease),
+			newOptLeaseTime(t, testLeaseTTL),
 			newOptHostname(t, testLease4HostnameDynamic),
 		},
 	}, {
-		name: "static",
 		req: newDHCPREQUEST(t, &dhcpRequestConfig{
 			clientHWAddr: testHWStatic,
 			clientIP:     testIPv4Static,
 			flags:        dhcpsvc.FlagsBroadcast,
 		}),
+		want: testLease4Static,
+		name: "static",
 		wantOpts: layers.DHCPOptions{
 			newOptMessageType(t, layers.DHCPMsgTypeAck),
 			newOptServerID(t, testIfaceAddrV4),
@@ -480,53 +481,61 @@ func TestDHCPServer_ServeEther4_requestRenewSuccess(t *testing.T) {
 			newOptHostname(t, testLease4HostnameStatic),
 		},
 	}, {
-		name: "relay_agent",
 		req: newDHCPREQUEST(t, &dhcpRequestConfig{
 			clientHWAddr: testHWDynamic,
 			clientIP:     testIPv4Dynamic,
 			relayAgentIP: testIPv4RelayAgent,
 		}),
+		want: testLease4Dynamic,
+		name: "relay_agent",
 		wantOpts: layers.DHCPOptions{
 			newOptMessageType(t, layers.DHCPMsgTypeAck),
 			newOptServerID(t, testIfaceAddrV4),
-			newOptLeaseTime(t, testTTLDynamicLease),
+			newOptLeaseTime(t, testLeaseTTL),
 			newOptHostname(t, testLease4HostnameDynamic),
 		},
 	}, {
-		name: "ciaddr_unicast",
 		req: newDHCPREQUEST(t, &dhcpRequestConfig{
 			clientHWAddr: testHWDynamic,
 			clientIP:     testIPv4Dynamic,
 		}),
+		want: testLease4Dynamic,
+		name: "ciaddr_unicast",
 		wantOpts: layers.DHCPOptions{
 			newOptMessageType(t, layers.DHCPMsgTypeAck),
 			newOptServerID(t, testIfaceAddrV4),
-			newOptLeaseTime(t, testTTLDynamicLease),
+			newOptLeaseTime(t, testLeaseTTL),
 			newOptHostname(t, testLease4HostnameDynamic),
 		},
 	}}
 
 	for _, tc := range testCases {
-		dbFilePath := newTempDB(t)
-
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 
+			db := newTestDatabase(t, testLeases)
+
+			onStore := func(ctx context.Context, leases []*dhcpsvc.Lease) (err error) {
+				assert.Contains(t, leases, tc.want)
+
+				return nil
+			}
+
+			if tc.want != nil {
+				db.onStore = onStore
+			}
+
 			ndMgr, inCh, outCh := newTestNetworkDeviceManager(t, testIfaceAddrV4)
-			srv := newTestDHCPServer(t, &dhcpsvc.Config{
+			startTestDHCPServer(t, &dhcpsvc.Config{
+				Database:             db,
 				Interfaces:           testIPv4InterfacesConf,
 				NetworkDeviceManager: ndMgr,
-				DBFilePath:           dbFilePath,
 				Enabled:              true,
 			})
-			servicetest.RequireRun(t, srv, testTimeout)
-
-			leases := srv.Leases()
 
 			testutil.RequireSend(t, inCh, tc.req, testTimeout)
 
 			assertValidResponse4(t, dhcpv4FromPacket(t, tc.req), outCh, tc.wantOpts)
-			assertLeases(t, leases, srv, false)
 		})
 	}
 }
@@ -568,8 +577,6 @@ func TestDHCPServer_ServeEther4_requestRenewFail(t *testing.T) {
 	}}
 
 	for _, tc := range testCases {
-		dbFilePath := newTempDB(t)
-
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 
@@ -579,9 +586,9 @@ func TestDHCPServer_ServeEther4_requestRenewFail(t *testing.T) {
 			}
 
 			startTestDHCPServer(t, &dhcpsvc.Config{
+				Database:             newTestDatabase(t, testLeases),
 				Interfaces:           testIPv4InterfacesConf,
 				NetworkDeviceManager: ndMgr,
-				DBFilePath:           dbFilePath,
 				Enabled:              true,
 			})
 
@@ -596,51 +603,65 @@ func TestDHCPServer_ServeEther4_decline(t *testing.T) {
 	t.Parallel()
 
 	testCases := []struct {
-		req        gopacket.Packet
-		name       string
-		wantChange bool
+		want netip.Addr
+		req  gopacket.Packet
+		name string
 	}{{
-		req:        newDHCPDECLINE(t, testHWDynamic, testIPv4Dynamic),
-		name:       "success",
-		wantChange: true,
+		want: testIPv4Dynamic,
+		req:  newDHCPDECLINE(t, testHWDynamic, testIPv4Dynamic),
+		name: "success",
 	}, {
-		req:        newDHCPDECLINE(t, testHWUnknown, testIPv4Dynamic),
-		name:       "not_found",
-		wantChange: false,
+		want: netip.Addr{},
+		req:  newDHCPDECLINE(t, testHWUnknown, testIPv4Dynamic),
+		name: "not_found",
 	}, {
-		req:        newDHCPDECLINE(t, testHWAnother, testIPv4Unknown),
-		name:       "mismatch_ip",
-		wantChange: false,
+		want: netip.Addr{},
+		req:  newDHCPDECLINE(t, testHWAnother, testIPv4Unknown),
+		name: "mismatch_ip",
 	}, {
-		req:        newDHCPDECLINE(t, testHWDynamic, testIPv4OtherSubnet),
-		name:       "bad_subnet",
-		wantChange: false,
+		want: netip.Addr{},
+		req:  newDHCPDECLINE(t, testHWDynamic, testIPv4OtherSubnet),
+		name: "bad_subnet",
 	}, {
-		req:        newDHCPDECLINE(t, testHWDynamic, netip.Addr{}),
-		name:       "no_requested_ip",
-		wantChange: false,
+		want: netip.Addr{},
+		req:  newDHCPDECLINE(t, testHWDynamic, netip.Addr{}),
+		name: "no_requested_ip",
 	}}
 
 	for _, tc := range testCases {
-		dbFilePath := newTempDB(t)
+		// The lease should be blocked.
+		wantLease := &dhcpsvc.Lease{
+			IP:       tc.want,
+			Expiry:   testExpiryDynamicLease,
+			Hostname: "",
+			HWAddr:   dhcpsvc.BlockedHardwareAddr,
+			IsStatic: false,
+		}
 
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 
+			db := newTestDatabase(t, testLeases)
+
+			onStore := func(ctx context.Context, leases []*dhcpsvc.Lease) (err error) {
+				assert.Contains(t, leases, wantLease)
+
+				return nil
+			}
+
+			if tc.want != (netip.Addr{}) {
+				db.onStore = onStore
+			}
+
 			ndMgr, inCh, _ := newTestNetworkDeviceManager(t, testIfaceAddrV4)
-			srv := newTestDHCPServer(t, &dhcpsvc.Config{
+			startTestDHCPServer(t, &dhcpsvc.Config{
+				Database:             db,
 				Interfaces:           testIPv4InterfacesConf,
 				NetworkDeviceManager: ndMgr,
-				DBFilePath:           dbFilePath,
 				Enabled:              true,
 			})
-			servicetest.RequireRun(t, srv, testTimeout)
-
-			leases := srv.Leases()
 
 			testutil.RequireSend(t, inCh, tc.req, testTimeout)
-
-			assertLeases(t, leases, srv, tc.wantChange)
 		})
 	}
 }

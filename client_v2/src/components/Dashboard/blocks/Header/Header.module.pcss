@@ -90,6 +90,14 @@
 .protectionMenu {
     padding: 8px 0;
     min-width: 200px;
+
+    @media (min-width: 768px) {
+        min-width: 320px;
+    }
+}
+
+.protectionMenuItem {
+    padding-right: 24px;
 }
 
 .periodSettingsFooter {
@@ -164,7 +172,6 @@
     border: 0;
     border-radius: 8px;
     cursor: pointer;
-    color: var(--default-secondary-text);
     transition: var(--t2) background-color;
 
     &:hover,
@@ -205,5 +212,5 @@
 
 .cardSubtitle {
     font-size: 14px;
-    color: var(--default-secondary-text);
+    color: var(--default-description-text);
 }

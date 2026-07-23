@@ -20,13 +20,21 @@ NOTE: Add new changes BELOW THIS COMMENT.
 
 ### Added
 
+- Bootstrap servers configuration now supports comments.
+
+- New property `"language"` in `POST /control/install/check_config` and `POST /control/install/configure` HTTP APIs.
+
 - The user is able to remove the static lease's hostname via the HTTP API.
+
+### Changed
+
+- The `edge` channel has been switched to the new UI and versioning scheme.
 
 ### Fixed
 
 - Blocked requests without an EDNS(0) OPT record ([#8183]).
 
-[#8183]:     https://github.com/AdguardTeam/AdGuardHome/issues/8183
+[#8183]: https://github.com/AdguardTeam/AdGuardHome/issues/8183
 
 <!--
 NOTE: Add new changes ABOVE THIS COMMENT.

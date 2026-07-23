@@ -110,6 +110,7 @@ export const Header = (props: Props) => {
                             theme.select.option_check,
                             theme.text.t2,
                             theme.text.condenced,
+                            s.protectionMenuItem,
                         )}
                         onMouseDown={() => handleDisableProtection(item.time)}
                     >
@@ -184,14 +185,12 @@ export const Header = (props: Props) => {
 
                     <Dropdown
                         menu={protectionMenu}
-                        trigger="click"
                         position="bottomLeft"
                         open={protectionMenuOpen()}
                         onOpenChange={setProtectionMenuOpen}
                         wrapClass={s.protectionMenuWrapper}
                         disabled={!props.protectionEnabled}
                         noIcon
-                        disableAnimation
                     >
                         <button
                             type="button"
